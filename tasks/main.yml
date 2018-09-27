@@ -1,0 +1,76 @@
+---
+# using helm to install itself with a serviceaccount and clusterrolebinding
+
+- name: Determine tiller namespace status
+  command: kubectl get namespace {{ helm_tiller_namespace }}
+  register: out_discover_tiller_ns
+  ignore_errors: true
+
+- debug: var=out_discover_tiller_ns verbosity=2
+
+- name: Create tiller namespace
+  command: kubectl create namespace {{ helm_tiller_namespace }}
+  when: out_discover_tiller_ns.failed
+
+- name: Determine tiller serviceaccount status
+  command: kubectl get serviceaccount tiller --namespace {{ helm_tiller_namespace }}
+  register: out_discover_tiller_sa
+  ignore_errors: true
+
+- debug: var=out_discover_tiller_sa verbosity=2
+
+- name: Create tiller serviceaccount
+  command: kubectl create serviceaccount tiller --namespace {{ helm_tiller_namespace }}
+  register: out_create_tiller_sa
+  when: out_discover_tiller_sa.failed
+
+- debug: var=out_create_tiller_sa verbosity=2
+
+# TODO - name: Create clusterrole
+# TODO - name: Create role
+
+- name: Determine tiller rolebinding status
+  command: kubectl get
+    {%if helm_tiller_role != ''%}rolebinding{%endif%}
+    {%if helm_tiller_clusterrole != ''%}clusterrolebinding{%endif%}
+    tiller --namespace {{ helm_tiller_namespace }}
+  register: out_discover_rolebinding
+  when: helm_tiller_clusterrole != "" or helm_tiller_role != ""
+  ignore_errors: true
+
+- debug: var=out_discover_rolebinding  verbosity=2
+
+- name: Create tiller rolebinding
+  command: "kubectl create clusterrolebinding tiller
+    --serviceaccount={{ helm_tiller_namespace }}:tiller
+    {%if helm_tiller_clusterrole != ''%}--clusterrole={{ helm_tiller_clusterrole }}{%endif%}
+    {%if helm_tiller_role != ''%}--role={{ helm_tiller_role }}{%endif%}"
+  register: out_create_tiller_sa
+  when: out_discover_rolebinding.failed|default(false) and (helm_tiller_clusterrole != "" or helm_tiller_role != "")
+
+- debug: var=out_create_tiller_sa verbosity=2
+
+- name: Helm | Determining tiller-deploy status
+  command: kubectl get deploy/tiller-deploy --namespace {{ helm_tiller_namespace }}
+  register: out_discover_tiller_installed
+  ignore_errors: true
+
+- name: Helm | Client Only Init
+  command: helm init --client-only --tiller-namespace {{ helm_tiller_namespace }}
+  register: out_helm_init
+  when: not out_discover_tiller_installed.failed
+
+- name: Helm | Do init
+  shell: helm init --wait --service-account tiller --tiller-namespace {{ helm_tiller_namespace }}
+  register: out_helm_init
+  when: out_discover_tiller_installed.failed
+
+- debug: msg="{{ out_helm_init.stdout }}{{ out_helm_init.stderr }}"
+  when: out_helm_init.changed
+
+- name: Add Helm repositories
+  command: helm repo add {{ item.name }} {{ item.location }}
+  loop: "{{ helm_repositories }}"
+
+- name: Update Helm repositories
+  command: helm repo update

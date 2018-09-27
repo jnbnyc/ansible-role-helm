@@ -1,0 +1,10 @@
+---
+# defaults for role helm_install
+
+helm_repositories:
+  - name: incubator
+    location: "https://kubernetes-charts-incubator.storage.googleapis.com/"
+
+helm_tiller_clusterrole: cluster-admin
+helm_tiller_namespace: kube-system
+helm_tiller_role: ""
